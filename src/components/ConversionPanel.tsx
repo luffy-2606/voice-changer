@@ -1,9 +1,9 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Play, Sparkles, Sliders, Volume2, HelpCircle } from "lucide-react";
 import { AudioInput, OutputAudio, ConversionState } from "@/types/audio";
-import { generateTetoSpeech } from "@/lib/tetoTTS";
+import { generateTetoSpeech, preloadTTSModels } from "@/lib/tetoTTS";
 import { decodeAudioToBuffer, applyTetoEffects, audioBufferToWav } from "@/lib/audioUtils";
 
 interface ConversionPanelProps {
@@ -31,6 +31,13 @@ export const ConversionPanel: React.FC<ConversionPanelProps> = ({
   const [pitchShift, setPitchShift] = useState<number>(3.0); // +3 semitones
   const [brightness, setBrightness] = useState<number>(5.0); // +5 dB treble boost
   const [showSettings, setShowSettings] = useState<boolean>(false);
+
+  // Pre-warm all TTS models in background on mount
+  useEffect(() => {
+    preloadTTSModels().catch(() => {
+      // Silent — errors will surface properly when the user clicks Convert
+    });
+  }, []);
 
   const handleConvert = async () => {
     if (!transcript.trim()) {

@@ -10,9 +10,9 @@
   },
   "dependencies": {
     "@huggingface/transformers": "^4.2.0",
-    "kokoro-js": "^1.2.1",
     "lucide-react": "^1.18.0",
     "next": "16.2.9",
+    "onnxruntime-web": "^1.26.0",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "wavesurfer.js": "^7.12.8"
@@ -24,6 +24,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.2.9",
+    "file-loader": "^6.2.0",
     "tailwindcss": "^4",
     "typescript": "^5"
   }

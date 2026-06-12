@@ -316,7 +316,7 @@ export default function Home() {
             <span>100% Client-Side Audio Processing. No audio or transcript leaves your device.</span>
           </div>
           <div className="text-[10px] text-white/20 leading-relaxed max-w-md">
-            TetoVoice V1 uses Xenova/whisper-tiny.en for transcription and Kokoro-82M-v1.0-ONNX for text-to-speech. Post-processing filters are applied in-browser using Web Audio DSP. Kasane Teto is a trademark of Twin Drill.
+            TetoVoice V1 uses Xenova/whisper-tiny.en for transcription and Xenova/speecht5_tts for text-to-speech. Post-processing filters are applied in-browser using Web Audio DSP. Kasane Teto is a trademark of Twin Drill.
           </div>
         </div>
       </footer>

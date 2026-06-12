@@ -64,8 +64,12 @@ export const WaveformPlayer: React.FC<WaveformPlayerProps> = ({
 
     waveSurferRef.current = ws;
 
-    // Load Audio URL
-    ws.load(audioUrl);
+    // Load Audio URL and ignore abort errors if the component unmounts quickly
+    ws.load(audioUrl).catch((err) => {
+      if (err.name !== "AbortError") {
+        console.error("WaveSurfer load error:", err);
+      }
+    });
 
     // Event Listeners
     ws.on("ready", () => {
