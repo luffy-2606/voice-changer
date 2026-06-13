@@ -1,10 +1,12 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Play, Sparkles, Sliders, Volume2, HelpCircle } from "lucide-react";
+import { Sparkles, Sliders, ChevronDown, Mic2 } from "lucide-react";
 import { AudioInput, OutputAudio, ConversionState } from "@/types/audio";
-import { generateTetoSpeech, preloadTTSModels } from "@/lib/tetoTTS";
+import { generateSpeech } from "@/lib/tts/kokoro";
+import { preloadKokoroModel } from "@/lib/tts/modelLoader";
 import { decodeAudioToBuffer, applyTetoEffects, audioBufferToWav } from "@/lib/audioUtils";
+import { VOICES, DEFAULT_VOICE_ID, Voice } from "@/lib/tts/voices";
 
 interface ConversionPanelProps {
   audioInput: AudioInput | null;
@@ -27,17 +29,30 @@ export const ConversionPanel: React.FC<ConversionPanelProps> = ({
   progressMessage,
   setProgressMessage,
 }) => {
-  // Custom DSP Sliders
-  const [pitchShift, setPitchShift] = useState<number>(3.0); // +3 semitones
-  const [brightness, setBrightness] = useState<number>(5.0); // +5 dB treble boost
+  // Voice selection
+  const [selectedVoiceId, setSelectedVoiceId] = useState<string>(DEFAULT_VOICE_ID);
+  const [voiceDropdownOpen, setVoiceDropdownOpen] = useState<boolean>(false);
+
+  // DSP Sliders
+  const [pitchShift, setPitchShift] = useState<number>(3.0);
+  const [brightness, setBrightness] = useState<number>(5.0);
   const [showSettings, setShowSettings] = useState<boolean>(false);
 
-  // Pre-warm all TTS models in background on mount
+  const selectedVoice: Voice =
+    VOICES.find((v) => v.id === selectedVoiceId) ?? VOICES[0];
+
+  // Pre-warm Kokoro model in background on mount
   useEffect(() => {
-    preloadTTSModels().catch(() => {
-      // Silent — errors will surface properly when the user clicks Convert
-    });
+    preloadKokoroModel();
   }, []);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    if (!voiceDropdownOpen) return;
+    const handleClickOutside = () => setVoiceDropdownOpen(false);
+    window.addEventListener("click", handleClickOutside);
+    return () => window.removeEventListener("click", handleClickOutside);
+  }, [voiceDropdownOpen]);
 
   const handleConvert = async () => {
     if (!transcript.trim()) {
@@ -46,23 +61,25 @@ export const ConversionPanel: React.FC<ConversionPanelProps> = ({
     }
 
     onConvertStart();
-    setProgressMessage("Loading TTS Model...");
+    setProgressMessage("Loading Kokoro TTS model...");
 
     try {
-      // Step 1: Synthesize Raw Speech (returns raw WAV Blob)
-      const rawWavBlob = await generateTetoSpeech(transcript, (msg) => {
-        setProgressMessage(msg);
-      });
+      // Step 1: Synthesize raw speech via Kokoro → WAV Blob
+      const rawWavBlob = await generateSpeech(
+        transcript,
+        selectedVoiceId,
+        (msg) => setProgressMessage(msg)
+      );
 
-      // Step 2: Decode Raw WAV back to AudioBuffer for DSP post-processing
+      // Step 2: Decode WAV back to AudioBuffer for DSP post-processing
       setProgressMessage("Decoding audio for DSP...");
       const rawBuffer = await decodeAudioToBuffer(rawWavBlob);
 
-      // Step 3: Apply pitch-shifting and treble/brightness filtering
+      // Step 3: Apply pitch-shift and treble/brightness filtering
       setProgressMessage("Applying Teto-style effects...");
       const processedBuffer = await applyTetoEffects(rawBuffer, pitchShift, brightness);
 
-      // Step 4: Encode the processed buffer back to WAV
+      // Step 4: Encode processed buffer → WAV Blob
       setProgressMessage("Finalizing output...");
       const processedBlob = audioBufferToWav(processedBuffer);
       const processedUrl = URL.createObjectURL(processedBlob);
@@ -72,14 +89,16 @@ export const ConversionPanel: React.FC<ConversionPanelProps> = ({
         url: processedUrl,
         duration: processedBuffer.duration,
       });
-
     } catch (err: any) {
       console.error("Conversion error:", err);
       onConvertError(err.message || "An error occurred during speech conversion.");
     }
   };
 
-  const isIdle = conversionState === "idle" || conversionState === "completed" || conversionState === "error";
+  const isIdle =
+    conversionState === "idle" ||
+    conversionState === "completed" ||
+    conversionState === "error";
   const isProcessing = !isIdle;
   const isInputReady = !!audioInput && !!transcript.trim() && isIdle;
 
@@ -109,6 +128,7 @@ export const ConversionPanel: React.FC<ConversionPanelProps> = ({
         <button
           onClick={() => setShowSettings(!showSettings)}
           disabled={isProcessing}
+          id="tts-settings-toggle"
           className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs border border-white/10 transition-all duration-200 ${
             showSettings
               ? "bg-white/10 text-white"
@@ -116,11 +136,84 @@ export const ConversionPanel: React.FC<ConversionPanelProps> = ({
           }`}
         >
           <Sliders className="h-3.5 w-3.5" />
-          Tuning Parameters
+          Tuning
         </button>
       </div>
 
-      {/* Settings Panel */}
+      {/* ── Voice Selector ─────────────────────────────────────────────── */}
+      <div className="flex flex-col gap-1.5">
+        <div className="flex items-center gap-1.5 text-xs text-white/50 font-semibold uppercase tracking-wider">
+          <Mic2 className="h-3.5 w-3.5 text-pink-400" />
+          Voice
+        </div>
+
+        <div className="relative" onClick={(e) => e.stopPropagation()}>
+          <button
+            id="voice-selector-btn"
+            disabled={isProcessing}
+            onClick={() => setVoiceDropdownOpen((o) => !o)}
+            className={`w-full flex items-center justify-between gap-3 px-4 py-3 rounded-xl border text-left transition-all duration-200 ${
+              isProcessing
+                ? "border-white/[0.05] bg-white/[0.02] text-white/30 cursor-not-allowed"
+                : "border-white/10 bg-white/[0.04] hover:border-pink-500/30 hover:bg-white/[0.06] text-white cursor-pointer"
+            }`}
+          >
+            <div className="flex flex-col gap-0.5 min-w-0">
+              <span className="text-sm font-semibold leading-none">
+                {selectedVoice.name}
+              </span>
+              <span className="text-[11px] text-white/40 leading-none mt-0.5">
+                {selectedVoice.language} · {selectedVoice.description}
+              </span>
+            </div>
+            <ChevronDown
+              className={`h-4 w-4 shrink-0 text-white/40 transition-transform duration-200 ${
+                voiceDropdownOpen ? "rotate-180" : ""
+              }`}
+            />
+          </button>
+
+          {/* Dropdown */}
+          {voiceDropdownOpen && (
+            <div
+              id="voice-dropdown"
+              className="absolute left-0 right-0 top-full mt-2 z-50 rounded-xl border border-white/10 bg-[#0f0f14]/95 backdrop-blur-xl shadow-2xl shadow-black/50 overflow-hidden animate-fadeIn"
+            >
+              {VOICES.map((voice) => (
+                <button
+                  key={voice.id}
+                  id={`voice-option-${voice.id}`}
+                  onClick={() => {
+                    setSelectedVoiceId(voice.id);
+                    setVoiceDropdownOpen(false);
+                  }}
+                  className={`w-full flex items-center gap-3 px-4 py-3 text-left transition-all duration-150 border-b border-white/[0.04] last:border-0 ${
+                    voice.id === selectedVoiceId
+                      ? "bg-pink-500/10 text-pink-300"
+                      : "text-white/70 hover:bg-white/[0.04] hover:text-white"
+                  }`}
+                >
+                  <div className="flex flex-col gap-0.5 min-w-0">
+                    <span className="text-xs font-semibold leading-none">
+                      {voice.name}
+                      {voice.id === selectedVoiceId && (
+                        <span className="ml-2 text-[9px] text-pink-400 font-bold uppercase tracking-widest">
+                          selected
+                        </span>
+                      )}
+                    </span>
+                    <span className="text-[10px] text-white/35 leading-none mt-0.5">
+                      {voice.language} · {voice.description}
+                    </span>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── DSP Settings Panel ──────────────────────────────────────────── */}
       {showSettings && (
         <div className="rounded-xl bg-black/30 border border-white/[0.05] p-4 flex flex-col gap-4 animate-fadeIn">
           <div className="flex items-center gap-1.5 text-xs text-white/60 font-semibold uppercase tracking-wider">
@@ -136,22 +229,22 @@ export const ConversionPanel: React.FC<ConversionPanelProps> = ({
             </div>
             <input
               type="range"
-              min="1.0"
-              max="6.0"
+              min="0.0"
+              max="8.0"
               step="0.5"
               value={pitchShift}
               onChange={(e) => setPitchShift(parseFloat(e.target.value))}
               className="w-full accent-pink-500 h-1.5 bg-white/10 rounded-lg cursor-pointer appearance-none"
             />
             <span className="text-[10px] text-white/30">
-              Higher shifts make the voice sound more high-pitched/robotic. Default is +3.0 ST.
+              Since Kokoro already produces natural female speech, a subtle +2–4 ST shift gives the vocaloid sparkle. Set to 0 to hear raw Kokoro output.
             </span>
           </div>
 
           {/* Brightness Slider */}
           <div className="flex flex-col gap-1.5">
             <div className="flex justify-between text-xs font-mono">
-              <span className="text-white/50">Vocal Brightness (Formant Treble)</span>
+              <span className="text-white/50">Vocal Brightness (Treble Boost)</span>
               <span className="text-pink-400 font-medium">+{brightness.toFixed(1)} dB</span>
             </div>
             <input
@@ -170,21 +263,28 @@ export const ConversionPanel: React.FC<ConversionPanelProps> = ({
         </div>
       )}
 
-      {/* Pipeline Status Indicator */}
+      {/* ── Pipeline Status Indicator ───────────────────────────────────── */}
       {isProcessing && (
-        <div className={`w-full border rounded-xl bg-white/[0.01] p-4 text-center font-mono text-xs flex flex-col gap-3 items-center justify-center ${getStatusColor()}`}>
+        <div
+          className={`w-full border rounded-xl bg-white/[0.01] p-4 text-center font-mono text-xs flex flex-col gap-3 items-center justify-center ${getStatusColor()}`}
+        >
           <div className="flex items-center gap-3">
             <div className="h-4 w-4 rounded-full border-2 border-current border-t-transparent animate-spin" />
             <span className="font-semibold uppercase tracking-wider animate-pulse">
-              {conversionState === "transcribing" ? "Transcribing Input..." : "Converting to Teto..."}
+              {conversionState === "transcribing"
+                ? "Transcribing Input..."
+                : "Converting to Teto..."}
             </span>
           </div>
-          <span className="text-white/60 font-sans tracking-normal">{progressMessage}</span>
+          <span className="text-white/60 font-sans tracking-normal">
+            {progressMessage}
+          </span>
         </div>
       )}
 
-      {/* Conversion Button */}
+      {/* ── Convert Button ──────────────────────────────────────────────── */}
       <button
+        id="convert-btn"
         onClick={handleConvert}
         disabled={!isInputReady}
         className={`w-full py-4 rounded-xl font-bold tracking-wider uppercase text-sm transition-all duration-300 flex items-center justify-center gap-2 shadow-lg ${
