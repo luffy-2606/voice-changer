@@ -1,5 +1,3 @@
-import { pipeline } from "@huggingface/transformers";
-
 let transcriberInstance: any = null;
 
 /**
@@ -26,6 +24,8 @@ export async function getTranscriber(onProgress?: (msg: string) => void): Promis
   if (transcriberInstance) {
     return transcriberInstance;
   }
+
+  const { pipeline } = await import("@huggingface/transformers");
 
   const isWebGPU = await checkWebGPUSupport();
   const device = isWebGPU ? "webgpu" : "wasm";
